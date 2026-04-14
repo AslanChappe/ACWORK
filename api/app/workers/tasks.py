@@ -77,37 +77,69 @@ async def _dispatch(task_type: str, payload: dict[str, Any]) -> dict[str, Any]:
     """
     Ajoute tes handlers ici selon le task_type reçu de n8n.
     Chaque handler est une coroutine async qui reçoit le payload et retourne un dict.
-
-    Exemple :
-        if task_type == "scraping":
-            return await _handle_scraping(payload)
-        elif task_type == "report_pdf":
-            return await _handle_report_pdf(payload)
     """
-    handlers = {
-        # "mon_type": _handle_mon_type,
+    handlers: dict[str, Any] = {
+        "text_analysis": _handle_text_analysis,
+        # "scraping":      _handle_scraping,
+        # "report_pdf":    _handle_report_pdf,
     }
 
     handler = handlers.get(task_type)
     if handler:
         return await handler(payload)
 
-    # Handler par défaut — remplace par une exception si tu veux rejeter les types inconnus
+    # Type inconnu → log + réponse neutre (change en `raise` si tu veux rejeter)
     logger.warning("task.unknown_type", extra={"task_type": task_type})
     return {"task_type": task_type, "status": "processed", "payload": payload}
 
 
-# ── Exemples de handlers (à compléter) ────────────────────
+# ── Handlers métier ────────────────────────────────────────
+
+async def _handle_text_analysis(payload: dict[str, Any]) -> dict[str, Any]:
+    """
+    Exemple d'aller-retour n8n ↔ FastAPI.
+    Reçoit un texte, retourne des statistiques simples.
+
+    Payload attendu : { "text": "..." }
+    Résultat        : { "word_count": N, "char_count": N, "sentences": N,
+                        "word_frequency": {...}, "preview": "..." }
+    """
+    text: str = payload.get("text", "")
+    if not text:
+        raise ValueError("Le champ 'text' est requis dans le payload.")
+
+    words = text.split()
+    sentences = [s.strip() for s in text.replace("!", ".").replace("?", ".").split(".") if s.strip()]
+
+    # Fréquence des mots (sans ponctuation, en minuscules)
+    import re
+    clean_words = [re.sub(r"[^\w]", "", w).lower() for w in words if re.sub(r"[^\w]", "", w)]
+    freq: dict[str, int] = {}
+    for w in clean_words:
+        freq[w] = freq.get(w, 0) + 1
+    top_words = dict(sorted(freq.items(), key=lambda x: x[1], reverse=True)[:10])
+
+    return {
+        "word_count":     len(words),
+        "char_count":     len(text),
+        "sentence_count": len(sentences),
+        "word_frequency": top_words,
+        "preview":        text[:120] + ("…" if len(text) > 120 else ""),
+    }
+
+
+# ── Stubs (à implémenter selon tes besoins) ────────────────
 
 # async def _handle_scraping(payload: dict) -> dict:
+#     from app.core.http_client import http_client_ctx
 #     url = payload["url"]
 #     async with http_client_ctx() as client:
-#         response = await client.get(url)
-#     return {"content": response.text[:500]}
+#         response = await client.get(url, timeout=15)
+#     return {"url": url, "status_code": response.status_code, "preview": response.text[:500]}
 
 # async def _handle_report_pdf(payload: dict) -> dict:
-#     # logique de génération PDF
-#     return {"file_path": "/reports/output.pdf"}
+#     # logique de génération PDF (ex: weasyprint, reportlab)
+#     return {"file_path": "/reports/output.pdf", "pages": 0}
 
 
 # ── Tâches planifiées (Celery Beat) ────────────────────────

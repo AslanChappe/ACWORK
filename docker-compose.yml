@@ -12,6 +12,11 @@ services:
     image: postgres:16-alpine
     container_name: postgres
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -33,6 +38,11 @@ services:
     image: redis:7-alpine
     container_name: redis
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 320M
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
@@ -50,6 +60,11 @@ services:
     image: n8nio/n8n:latest
     container_name: n8n
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
     depends_on:
       postgres:
         condition: service_healthy
@@ -104,6 +119,11 @@ services:
       dockerfile: Dockerfile
     container_name: api
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
     depends_on:
       postgres:
         condition: service_healthy
@@ -114,7 +134,10 @@ services:
       REDIS_URL: redis://redis:6379/0
       API_SECRET_KEY: ${API_SECRET_KEY}
       API_ENV: production
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      TIMEZONE: ${TIMEZONE:-America/Cayenne}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-4}
     networks:
       - internal
     healthcheck:
@@ -131,6 +154,11 @@ services:
       dockerfile: Dockerfile
     container_name: celery-worker
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
     depends_on:
       postgres:
         condition: service_healthy
@@ -141,11 +169,13 @@ services:
       REDIS_URL: redis://redis:6379/0
       API_SECRET_KEY: ${API_SECRET_KEY}
       API_ENV: production
+      TIMEZONE: ${TIMEZONE:-America/Cayenne}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      CELERY_CONCURRENCY: ${CELERY_CONCURRENCY:-4}
     command: >
       celery -A app.workers.celery_app worker
       --loglevel=info
-      --concurrency=${CELERY_CONCURRENCY:-4}
+      --concurrency=4
       --queues=tasks,default
     networks:
       - internal
@@ -157,6 +187,11 @@ services:
       dockerfile: Dockerfile
     container_name: celery-beat
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
     depends_on:
       postgres:
         condition: service_healthy
@@ -167,6 +202,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       API_SECRET_KEY: ${API_SECRET_KEY}
       API_ENV: production
+      TIMEZONE: ${TIMEZONE:-America/Cayenne}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     volumes:
       - celery_beat_data:/app/celerybeat   # persiste le schedule entre les restarts
@@ -182,6 +218,11 @@ services:
     image: nginx:1.25-alpine
     container_name: nginx
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 64M
     depends_on:
       - n8n
       - api

@@ -20,6 +20,7 @@ engine = create_async_engine(
     pool_timeout=settings.db_pool_timeout,
     pool_recycle=settings.db_pool_recycle,
     pool_pre_ping=True,
+    connect_args={"server_settings": {"timezone": settings.timezone}},
 )
 
 # ── Session factory ────────────────────────────────────────

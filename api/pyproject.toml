@@ -1,0 +1,72 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "api"
+version = "0.1.0"
+description = "FastAPI backend — n8n orchestration stack"
+requires-python = ">=3.12"
+
+dependencies = [
+    # Web framework
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+
+    # Database (async)
+    "sqlalchemy[asyncio]>=2.0.0",
+    "asyncpg>=0.29.0",
+    "alembic>=1.13.0",
+
+    # Validation
+    "pydantic>=2.7.0",
+    "pydantic-settings>=2.3.0",
+
+    # HTTP client (async — for calling n8n webhooks)
+    "httpx>=0.27.0",
+
+    # Async helpers
+    "anyio>=4.4.0",
+
+    # Logging
+    "structlog>=24.2.0",
+
+    # Security
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+
+    # Task queue
+    "celery[redis]>=5.4.0",
+    "redis>=5.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    # Testing
+    "pytest>=8.2.0",
+    "pytest-asyncio>=0.23.0",
+    "httpx>=0.27.0",
+    "aiosqlite>=0.20.0",       # SQLite async driver — tests sans Postgres
+
+    # Code quality
+    "ruff>=0.4.0",
+    "mypy>=1.10.0",
+
+    # Type stubs
+    "types-passlib>=1.7.7",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["B008"]   # FastAPI Depends() pattern
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]

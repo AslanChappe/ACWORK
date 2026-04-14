@@ -1,0 +1,76 @@
+# ============================================================
+# Local Development Override — auto-loaded by docker compose
+# Usage: docker compose up -d  (no extra flag needed)
+# ============================================================
+
+name: n8n-stack
+
+services:
+
+  postgres:
+    ports:
+      - "5434:5432"   # 5432 et 5433 occupés par des Postgres natifs → port 5434
+
+  redis:
+    ports:
+      - "6379:6379"   # accès direct depuis le host (Redis Insight, tests locaux)
+
+  n8n:
+    environment:
+      N8N_PROTOCOL: http
+      N8N_BASIC_AUTH_ACTIVE: "false"
+      EXECUTIONS_DATA_SAVE_ON_SUCCESS: all
+      N8N_EXECUTIONS_MODE: queue          # queue mode actif même en local
+    ports:
+      - "5678:5678"
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile.dev
+    environment:
+      API_ENV: development
+      LOG_LEVEL: debug
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./api:/app
+    ports:
+      - "8000:8000"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/app
+
+  celery-worker:
+    build:
+      context: ./api
+      dockerfile: Dockerfile.dev
+    environment:
+      API_ENV: development
+      LOG_LEVEL: debug
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./api:/app   # code monté → redémarre le worker manuellement après modif
+    command: >
+      celery -A app.workers.celery_app worker
+      --loglevel=debug
+      --concurrency=2
+      --queues=tasks,default
+
+  celery-beat:
+    build:
+      context: ./api
+      dockerfile: Dockerfile.dev
+    environment:
+      API_ENV: development
+      LOG_LEVEL: debug
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./api:/app
+      - celery_beat_data:/app/celerybeat
+    command: >
+      celery -A app.workers.celery_app beat
+      --loglevel=debug
+      --schedule=/app/celerybeat/celerybeat-schedule
+
+  # Nginx désactivé en local — accès direct via :5678 (n8n) et :8000 (api)
+  nginx:
+    profiles:
+      - production

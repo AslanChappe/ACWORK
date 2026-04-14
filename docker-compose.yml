@@ -1,0 +1,211 @@
+# ============================================================
+# Production Docker Compose — n8n + FastAPI + PostgreSQL + Redis + Celery
+# Deploy: docker compose up -d
+# ============================================================
+
+name: n8n-stack
+
+services:
+
+  # ── PostgreSQL ─────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_MULTIPLE_DATABASES: ${N8N_DB_NAME},${API_DB_NAME}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${API_DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── Redis ──────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ── n8n ────────────────────────────────────────────────────
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Server
+      N8N_HOST: ${N8N_HOST}
+      N8N_PORT: 5678
+      N8N_PROTOCOL: ${N8N_PROTOCOL:-https}
+      WEBHOOK_URL: ${N8N_WEBHOOK_URL}
+      N8N_EDITOR_BASE_URL: ${N8N_EDITOR_BASE_URL}
+      # Auth
+      N8N_BASIC_AUTH_ACTIVE: ${N8N_BASIC_AUTH_ACTIVE:-true}
+      N8N_BASIC_AUTH_USER: ${N8N_BASIC_AUTH_USER}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_BASIC_AUTH_PASSWORD}
+      # Database
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: ${N8N_DB_NAME}
+      DB_POSTGRESDB_USER: ${POSTGRES_USER}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+      # Queue mode — Redis comme broker de workflow
+      EXECUTIONS_MODE: ${N8N_EXECUTIONS_MODE:-queue}
+      QUEUE_BULL_REDIS_HOST: redis
+      QUEUE_BULL_REDIS_PORT: 6379
+      QUEUE_BULL_REDIS_DB: 1          # DB 1 → isolé du broker Celery (DB 0)
+      # Encryption & security
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      # Execution persistence
+      EXECUTIONS_DATA_SAVE_ON_ERROR: all
+      EXECUTIONS_DATA_SAVE_ON_SUCCESS: none
+      EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS: true
+      # Timezone
+      GENERIC_TIMEZONE: ${TIMEZONE:-America/Cayenne}
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5678/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ── FastAPI ────────────────────────────────────────────────
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${API_DB_NAME}
+      REDIS_URL: redis://redis:6379/0
+      API_SECRET_KEY: ${API_SECRET_KEY}
+      API_ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/api/v1/health || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # ── Celery Worker ──────────────────────────────────────────
+  celery-worker:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: celery-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${API_DB_NAME}
+      REDIS_URL: redis://redis:6379/0
+      API_SECRET_KEY: ${API_SECRET_KEY}
+      API_ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    command: >
+      celery -A app.workers.celery_app worker
+      --loglevel=info
+      --concurrency=${CELERY_CONCURRENCY:-4}
+      --queues=tasks,default
+    networks:
+      - internal
+
+  # ── Celery Beat (scheduler) ────────────────────────────────
+  celery-beat:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: celery-beat
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${API_DB_NAME}
+      REDIS_URL: redis://redis:6379/0
+      API_SECRET_KEY: ${API_SECRET_KEY}
+      API_ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - celery_beat_data:/app/celerybeat   # persiste le schedule entre les restarts
+    command: >
+      celery -A app.workers.celery_app beat
+      --loglevel=info
+      --schedule=/app/celerybeat/celerybeat-schedule
+    networks:
+      - internal
+
+  # ── Nginx (reverse proxy) ──────────────────────────────────
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: nginx
+    restart: unless-stopped
+    depends_on:
+      - n8n
+      - api
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - nginx_logs:/var/log/nginx
+    networks:
+      - internal
+      - external
+
+volumes:
+  postgres_data:
+  redis_data:
+  n8n_data:
+  nginx_logs:
+  celery_beat_data:
+
+networks:
+  internal:
+    driver: bridge
+  external:
+    driver: bridge

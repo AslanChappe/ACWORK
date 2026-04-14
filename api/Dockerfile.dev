@@ -1,0 +1,19 @@
+# Development Dockerfile — hot-reload + dev tools
+FROM python:3.12-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc libpq-dev wget bash \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml .
+RUN pip install --upgrade pip \
+    && pip install -e ".[dev]" --no-cache-dir
+
+# Source code is mounted as a volume — no COPY needed
+# uvicorn --reload handles hot-reloading
+
+EXPOSE 8000
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/app"]

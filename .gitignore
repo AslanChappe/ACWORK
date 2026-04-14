@@ -1,0 +1,53 @@
+# Environment
+.env
+!.env.example
+!.env.local
+
+# Python — virtualenv
+api/.venv/
+.venv/
+venv/
+
+# Python — cache
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+.mypy_cache/
+
+# uv
+uv.lock
+
+# Docker volumes (local)
+postgres_data/
+n8n_data/
+
+# n8n
+n8n/
+
+# Nginx SSL certs (generate locally)
+nginx/ssl/*.pem
+nginx/ssl/*.crt
+nginx/ssl/*.key
+
+# Celery runtime files
+api/celerybeat-schedule
+api/celerybeat-schedule.db
+api/celerybeat/
+
+# Alembic auto-generated (keep versions)
+# api/alembic/versions/ is tracked
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

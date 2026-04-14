@@ -8,12 +8,14 @@ Ajouter un nouveau type de tâche :
 """
 
 import asyncio
+import time
 import uuid
 from typing import Any
 
-from app.workers.celery_app import celery_app
 from celery import Task
 from celery.utils.log import get_task_logger
+
+from app.workers.celery_app import celery_app, celery_task_duration_seconds, celery_tasks_total
 
 logger = get_task_logger(__name__)
 
@@ -80,6 +82,7 @@ async def _execute_task(
         _engine, class_=AsyncSession, expire_on_commit=False
     )
 
+    _start = time.monotonic()
     try:
         async with _Session() as session:
             service = TaskService(session)
@@ -92,13 +95,18 @@ async def _execute_task(
                 await service.mark_success(uuid.UUID(task_id), result)
                 await session.commit()
                 logger.info("task.success", extra={"task_id": task_id})
+                celery_tasks_total.labels(task_type=task_type, status="success").inc()
                 return result
 
             except Exception as exc:
                 await service.mark_failed(uuid.UUID(task_id), str(exc))
                 await session.commit()
+                celery_tasks_total.labels(task_type=task_type, status="failed").inc()
                 raise
     finally:
+        celery_task_duration_seconds.labels(task_type=task_type).observe(
+            time.monotonic() - _start
+        )
         await _engine.dispose()
 
 

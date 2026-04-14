@@ -138,6 +138,7 @@ services:
       TIMEZONE: ${TIMEZONE:-America/Cayenne}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-4}
+      SENTRY_DSN: ${SENTRY_DSN:-}
     networks:
       - internal
     healthcheck:
@@ -172,6 +173,7 @@ services:
       TIMEZONE: ${TIMEZONE:-America/Cayenne}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       CELERY_CONCURRENCY: ${CELERY_CONCURRENCY:-4}
+      SENTRY_DSN: ${SENTRY_DSN:-}
     command: >
       celery -A app.workers.celery_app worker
       --loglevel=info
@@ -204,6 +206,7 @@ services:
       API_ENV: production
       TIMEZONE: ${TIMEZONE:-America/Cayenne}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      SENTRY_DSN: ${SENTRY_DSN:-}
     volumes:
       - celery_beat_data:/app/celerybeat   # persiste le schedule entre les restarts
     command: >

@@ -38,6 +38,10 @@ dependencies = [
     # Task queue
     "celery[redis]>=5.4.0",
     "redis>=5.0.0",
+
+    # Monitoring
+    "sentry-sdk[fastapi,celery]>=2.0.0",
+    "prometheus-fastapi-instrumentator>=0.11.0",
 ]
 
 [project.optional-dependencies]

@@ -65,3 +65,30 @@ def configure_celery_logging(**kwargs):
 
 
 logger = get_task_logger(__name__)
+
+# ── Sentry ─────────────────────────────────────────────────
+if settings.sentry_dsn:
+    import sentry_sdk
+    from sentry_sdk.integrations.celery import CeleryIntegration
+
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        environment=settings.api_env,
+        integrations=[CeleryIntegration()],
+        send_default_pii=False,
+    )
+
+# ── Métriques Prometheus (partagées avec tasks.py) ─────────
+from prometheus_client import Counter, Histogram
+
+celery_tasks_total = Counter(
+    "celery_tasks_total",
+    "Nombre total de tâches Celery par type et statut",
+    ["task_type", "status"],
+)
+celery_task_duration_seconds = Histogram(
+    "celery_task_duration_seconds",
+    "Durée d'exécution des tâches Celery en secondes",
+    ["task_type"],
+    buckets=[0.1, 0.5, 1, 2, 5, 10, 30, 60],
+)

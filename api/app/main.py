@@ -13,6 +13,20 @@ from app.core.logging import setup_logging
 settings = get_settings()
 setup_logging()
 
+# ── Sentry ─────────────────────────────────────────────────
+if settings.sentry_dsn:
+    import sentry_sdk
+    from sentry_sdk.integrations.fastapi import FastApiIntegration
+    from sentry_sdk.integrations.starlette import StarletteIntegration
+
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        environment=settings.api_env,
+        traces_sample_rate=0.1,
+        integrations=[StarletteIntegration(), FastApiIntegration()],
+        send_default_pii=False,
+    )
+
 
 # ── Lifespan (startup / shutdown) ──────────────────────────
 @asynccontextmanager
@@ -34,6 +48,14 @@ app = FastAPI(
     openapi_url="/openapi.json" if settings.is_dev else None,
     lifespan=lifespan,
 )
+
+# ── Prometheus /metrics ────────────────────────────────────
+from prometheus_fastapi_instrumentator import Instrumentator
+
+Instrumentator(
+    should_group_status_codes=True,
+    excluded_handlers=["/metrics", "/api/v1/health", "/api/v1/ping"],
+).instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
 
 # ── CORS ───────────────────────────────────────────────────
 # Origines autorisées lues depuis ALLOWED_ORIGINS dans .env (séparées par virgule)

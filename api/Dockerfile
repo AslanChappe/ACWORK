@@ -30,11 +30,15 @@ COPY --from=builder /install /usr/local
 COPY app/ ./app/
 COPY alembic.ini .
 COPY alembic/ ./alembic/
+COPY entrypoint.sh /entrypoint.sh
 
 # Non-root user for security
-RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+RUN useradd -m -u 1000 appuser \
+    && chown -R appuser:appuser /app \
+    && chmod +x /entrypoint.sh
 USER appuser
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${WEB_CONCURRENCY:-4}"]
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["uvicorn"]

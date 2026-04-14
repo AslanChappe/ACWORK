@@ -1,0 +1,85 @@
+{
+  "title": "n8n Stack — FastAPI + Celery",
+  "uid": "n8n-stack-overview",
+  "schemaVersion": 36,
+  "version": 1,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "id": 1, "type": "stat", "title": "Requêtes HTTP (total)",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "expr": "sum(http_requests_total{app_name='n8n Stack API'})", "legendFormat": "Total" }],
+      "options": { "colorMode": "background", "graphMode": "area" }
+    },
+    {
+      "id": 2, "type": "stat", "title": "Taux d'erreur HTTP (5xx)",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "expr": "sum(rate(http_requests_total{status_code=~'5..'}[5m]))", "legendFormat": "Erreurs/s" }],
+      "options": { "colorMode": "background", "graphMode": "area",
+        "thresholds": { "steps": [{"color":"green","value":null},{"color":"red","value":0.1}] }
+      }
+    },
+    {
+      "id": 3, "type": "stat", "title": "Tâches Celery — Succès",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "expr": "sum(celery_tasks_total{status='success'})", "legendFormat": "Succès" }],
+      "options": { "colorMode": "background",
+        "thresholds": { "steps": [{"color":"green","value":null}] }
+      }
+    },
+    {
+      "id": 4, "type": "stat", "title": "Tâches Celery — Échecs",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "expr": "sum(celery_tasks_total{status='failed'})", "legendFormat": "Échecs" }],
+      "options": { "colorMode": "background",
+        "thresholds": { "steps": [{"color":"green","value":null},{"color":"red","value":1}] }
+      }
+    },
+    {
+      "id": 5, "type": "timeseries", "title": "Latence HTTP (p50 / p95 / p99)",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p50" },
+        { "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p95" },
+        { "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p99" }
+      ]
+    },
+    {
+      "id": 6, "type": "timeseries", "title": "Requêtes HTTP par status code",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "sum(rate(http_requests_total[5m])) by (status_code)", "legendFormat": "{{status_code}}" }
+      ]
+    },
+    {
+      "id": 7, "type": "timeseries", "title": "Durée des tâches Celery (p50 / p95)",
+      "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(celery_task_duration_seconds_bucket[5m])) by (le, task_type))", "legendFormat": "p50 {{task_type}}" },
+        { "expr": "histogram_quantile(0.95, sum(rate(celery_task_duration_seconds_bucket[5m])) by (le, task_type))", "legendFormat": "p95 {{task_type}}" }
+      ]
+    },
+    {
+      "id": 8, "type": "timeseries", "title": "Taux de tâches Celery (succès / échec)",
+      "gridPos": { "x": 12, "y": 12, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "sum(rate(celery_tasks_total[5m])) by (task_type, status)", "legendFormat": "{{task_type}} — {{status}}" }
+      ]
+    },
+    {
+      "id": 9, "type": "timeseries", "title": "Mémoire processus API (MB)",
+      "gridPos": { "x": 0, "y": 20, "w": 12, "h": 6 },
+      "targets": [
+        { "expr": "process_resident_memory_bytes / 1024 / 1024", "legendFormat": "RAM (MB)" }
+      ]
+    },
+    {
+      "id": 10, "type": "timeseries", "title": "CPU processus API",
+      "gridPos": { "x": 12, "y": 20, "w": 12, "h": 6 },
+      "targets": [
+        { "expr": "rate(process_cpu_seconds_total[1m])", "legendFormat": "CPU %" }
+      ]
+    }
+  ]
+}

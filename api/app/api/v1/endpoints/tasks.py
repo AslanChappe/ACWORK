@@ -121,9 +121,9 @@ async def delete_task(
 )
 async def trigger_n8n_workflow(
     task_id: uuid.UUID,
-    webhook_path: str = Query(..., description="Chemin du webhook n8n à appeler"),
     service: Annotated[TaskService, Depends(get_task_service)],
     n8n: Annotated[N8nService, Depends(get_n8n_service)],
+    webhook_path: str = Query(..., description="Chemin du webhook n8n à appeler"),
 ) -> dict:
     """
     Relit une tâche existante et envoie son payload vers un webhook n8n.

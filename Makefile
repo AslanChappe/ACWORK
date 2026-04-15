@@ -219,6 +219,17 @@ flower:
 		celery -A app.workers.celery_app flower --port=5555
 	@echo "→ Flower disponible sur http://localhost:5555"
 
+# ── Backup & SSL ───────────────────────────────────────────
+
+backup:
+	@bash scripts/backup.sh
+
+restore:
+	@bash scripts/restore.sh $(file)
+
+renew-ssl:
+	@bash scripts/renew-ssl.sh
+
 # ── Utilitaires Docker ─────────────────────────────────────
 
 build:

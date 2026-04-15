@@ -135,6 +135,7 @@ services:
       API_SECRET_KEY: ${API_SECRET_KEY}
       API_ENV: production
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY}
       TIMEZONE: ${TIMEZONE:-America/Cayenne}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-4}

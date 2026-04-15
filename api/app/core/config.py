@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     celery_task_max_retries: int = 3
     celery_task_retry_backoff: int = 60       # secondes entre chaque retry
 
+    # ── Auth service-to-service ────────────────────────────────
+    internal_api_key: str = ""   # clé partagée X-API-Key (vide = désactivé en dev)
+
     # ── n8n integration ────────────────────────────────────
     n8n_base_url: str = "http://n8n:5678"
     n8n_api_key: str = ""

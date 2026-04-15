@@ -114,6 +114,7 @@ services:
 
   # ── FastAPI ────────────────────────────────────────────────
   api:
+    image: ${DOCKER_IMAGE_API:-acwork-api:latest}
     build:
       context: ./api
       dockerfile: Dockerfile
@@ -151,6 +152,7 @@ services:
 
   # ── Celery Worker ──────────────────────────────────────────
   celery-worker:
+    image: ${DOCKER_IMAGE_API:-acwork-api:latest}
     build:
       context: ./api
       dockerfile: Dockerfile
@@ -185,6 +187,7 @@ services:
 
   # ── Celery Beat (scheduler) ────────────────────────────────
   celery-beat:
+    image: ${DOCKER_IMAGE_API:-acwork-api:latest}
     build:
       context: ./api
       dockerfile: Dockerfile

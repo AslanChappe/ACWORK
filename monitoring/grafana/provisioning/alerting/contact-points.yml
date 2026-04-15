@@ -1,0 +1,30 @@
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: ACWORK Alerts
+    receivers:
+      # ── Email ────────────────────────────────────────────────
+      # Activé si GF_SMTP_ENABLED=true + GF_ALERT_EMAIL configurés
+      - uid: acwork-email
+        type: email
+        disableResolveMessage: false
+        settings:
+          addresses: ${GF_ALERT_EMAIL}
+          singleEmail: true
+          subject: "[ACWORK] {{ .GroupLabels.alertname }} — {{ .Status | toUpper }}"
+          message: |
+            {{ range .Alerts }}
+            **{{ .Labels.alertname }}** — Sévérité: {{ .Labels.severity }}
+            {{ .Annotations.summary }}
+            {{ .Annotations.description }}
+            {{ end }}
+
+      # ── Webhook (Slack / Discord / etc.) ────────────────────
+      # Décommenter et configurer GF_ALERT_WEBHOOK_URL dans .env
+      # - uid: acwork-webhook
+      #   type: webhook
+      #   disableResolveMessage: false
+      #   settings:
+      #     url: ${GF_ALERT_WEBHOOK_URL}
+      #     httpMethod: POST

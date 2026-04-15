@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  REGISTRY: ghcr.io
+  # Nom de l'image en minuscules (Docker n'accepte pas les majuscules)
+  IMAGE_NAME: ${{ github.repository_owner }}/acwork-api
+
 jobs:
   # ── Tests + Lint ────────────────────────────────────────────
   test:
@@ -35,10 +40,61 @@ jobs:
         env:
           API_SECRET_KEY: ci-test-secret-key-at-least-32-chars
           INTERNAL_API_KEY: ci-test-internal-key
-          DATABASE_URL: sqlite+aiosqlite:///:memory:
+          DATABASE_URL: "sqlite+aiosqlite:///:memory:"
+
+  # ── Build + Push image Docker ───────────────────────────────
+  # Build uniquement sur push vers main (pas sur les PRs)
+  # Pousse sur GitHub Container Registry avec 2 tags :
+  #   - ghcr.io/owner/acwork-api:<sha>   → immuable, utilisé pour le deploy
+  #   - ghcr.io/owner/acwork-api:latest  → pointeur mobile vers le dernier build
+  build:
+    name: Build & Push Docker Image
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    permissions:
+      contents: read
+      packages: write   # nécessaire pour pousser sur ghcr.io
+
+    outputs:
+      image: ${{ steps.meta.outputs.tags }}
+      sha_tag: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,format=long
+            type=raw,value=latest
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: ./api
+          dockerfile: ./api/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Cache layers entre les builds pour accélérer
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          cache-to: type=inline
 
   # ── Deploy sur VPS ──────────────────────────────────────────
-  # Ne s'exécute que sur push vers main (pas sur les PRs)
+  # Tire l'image buildée par le job précédent (tag SHA immuable)
+  # Rollback : relancer le workflow sur un commit précédent
   #
   # Secrets GitHub requis (Settings → Secrets → Actions) :
   #
@@ -53,18 +109,24 @@ jobs:
   #     PROD_API_SECRET_KEY      → openssl rand -hex 32
   #     PROD_INTERNAL_API_KEY    → openssl rand -hex 32
   #     PROD_N8N_ENCRYPTION_KEY  → openssl rand -hex 32
+  #     PROD_N8N_HOST            → ex: n8n.domain.com
   #     PROD_N8N_PASSWORD        → mot de passe admin n8n
   #     PROD_SENTRY_DSN          → DSN Sentry (laisser vide pour désactiver)
-  #     PROD_ALLOWED_ORIGINS     → ex: https://n8n.domain.com,https://app.domain.com
+  #     PROD_ALLOWED_ORIGINS     → ex: https://n8n.domain.com
   #     PROD_GRAFANA_PASSWORD    → openssl rand -hex 16
+  #     PROD_GF_ALERT_EMAIL      → email destinataire des alertes
+  #     PROD_GF_SMTP_ENABLED     → true / false
+  #     PROD_GF_SMTP_HOST        → ex: smtp.gmail.com:587
+  #     PROD_GF_SMTP_USER        → adresse email SMTP
+  #     PROD_GF_SMTP_PASSWORD    → mot de passe app SMTP
   deploy:
     name: Deploy to VPS
     runs-on: ubuntu-latest
-    needs: test
+    needs: build
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     steps:
-      - name: Write .env and deploy via SSH
+      - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
@@ -74,11 +136,11 @@ jobs:
             set -e
             cd ${{ secrets.DEPLOY_PATH }}
 
-            # Récupérer le dernier code
+            # Récupérer le dernier code (configs, scripts, etc.)
             git pull origin main
 
             # Écrire le .env prod depuis les secrets GitHub
-            # Le fichier est recréé à chaque deploy → toujours à jour
+            # L'image est taguée avec le SHA exact du commit → déploiement traçable
             cat > .env << 'ENVEOF'
             # ── PostgreSQL ──────────────────────────────────────
             POSTGRES_USER=admin
@@ -111,9 +173,19 @@ jobs:
             CELERY_CONCURRENCY=4
             WEB_CONCURRENCY=4
 
+            # ── Docker image (versionnée avec le SHA du commit) ──
+            DOCKER_IMAGE_API=ghcr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
+
             # ── Monitoring ───────────────────────────────────────
             SENTRY_DSN=${{ secrets.PROD_SENTRY_DSN }}
             GRAFANA_PASSWORD=${{ secrets.PROD_GRAFANA_PASSWORD }}
+            GF_ALERT_EMAIL=${{ secrets.PROD_GF_ALERT_EMAIL }}
+            GF_SMTP_ENABLED=${{ secrets.PROD_GF_SMTP_ENABLED }}
+            GF_SMTP_HOST=${{ secrets.PROD_GF_SMTP_HOST }}
+            GF_SMTP_USER=${{ secrets.PROD_GF_SMTP_USER }}
+            GF_SMTP_PASSWORD=${{ secrets.PROD_GF_SMTP_PASSWORD }}
+            GF_SMTP_FROM_ADDRESS=${{ secrets.PROD_GF_SMTP_USER }}
+            GF_SMTP_FROM_NAME=ACWORK Grafana
 
             # ── General ──────────────────────────────────────────
             TIMEZONE=America/Cayenne
@@ -121,12 +193,18 @@ jobs:
             ENVEOF
             chmod 600 .env
 
-            # Rebuild uniquement les services modifiés + redémarrage sans downtime
-            docker compose build api celery-worker celery-beat
+            # Authentification ghcr.io pour tirer l'image (utilise le PAT ou GITHUB_TOKEN)
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+            # Tirer l'image pré-buildée (plus rapide que de builder sur le VPS)
+            docker compose pull api celery-worker celery-beat
+
+            # Redémarrage sans downtime des services applicatifs
             docker compose up -d --no-deps api celery-worker celery-beat
 
-            # Vérifier que l'API répond
+            # Vérification de santé post-deploy
             sleep 5
             curl -sf http://localhost:8000/api/v1/ping || exit 1
 
-            echo "Deployment successful — $(git rev-parse --short HEAD)"
+            echo "Deployment successful — ${{ github.sha }}"
+            echo "Image: ghcr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}"

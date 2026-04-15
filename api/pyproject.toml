@@ -58,6 +58,9 @@ dev = [
 
     # Type stubs
     "types-passlib>=1.7.7",
+
+    # Pre-commit (installé localement pour git hooks)
+    "pre-commit>=3.7.0",
 ]
 
 [tool.ruff]
@@ -67,6 +70,10 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 ignore = ["B008"]   # FastAPI Depends() pattern
+
+[tool.mypy]
+plugins = ["pydantic.mypy"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

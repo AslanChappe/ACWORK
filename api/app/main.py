@@ -1,9 +1,10 @@
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.api.v1.router import router as v1_router
 from app.core.config import get_settings
@@ -50,8 +51,6 @@ app = FastAPI(
 )
 
 # ── Prometheus /metrics ────────────────────────────────────
-from prometheus_fastapi_instrumentator import Instrumentator
-
 Instrumentator(
     should_group_status_codes=True,
     excluded_handlers=["/metrics", "/api/v1/health", "/api/v1/ping"],
@@ -73,6 +72,7 @@ app.add_middleware(
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     from app.core.logging import get_logger
+
     logger = get_logger("api.exception")
     logger.error(
         "unhandled_exception",

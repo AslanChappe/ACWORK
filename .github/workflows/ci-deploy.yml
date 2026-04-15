@@ -39,11 +39,24 @@ jobs:
 
   # ── Deploy sur VPS ──────────────────────────────────────────
   # Ne s'exécute que sur push vers main (pas sur les PRs)
-  # Nécessite les secrets GitHub suivants :
-  #   SSH_HOST        → IP ou hostname du VPS
-  #   SSH_USER        → utilisateur SSH (ex: ubuntu)
-  #   SSH_PRIVATE_KEY → clé privée SSH (contenu du fichier ~/.ssh/id_rsa)
-  #   DEPLOY_PATH     → chemin absolu du projet sur le VPS (ex: /home/ubuntu/ACWORK)
+  #
+  # Secrets GitHub requis (Settings → Secrets → Actions) :
+  #
+  #   Infrastructure :
+  #     SSH_HOST          → IP ou hostname du VPS
+  #     SSH_USER          → utilisateur SSH (ex: ubuntu)
+  #     SSH_PRIVATE_KEY   → clé privée SSH (contenu de ~/.ssh/id_rsa)
+  #     DEPLOY_PATH       → chemin absolu du projet (ex: /home/ubuntu/ACWORK)
+  #
+  #   Application :
+  #     PROD_POSTGRES_PASSWORD   → openssl rand -hex 16
+  #     PROD_API_SECRET_KEY      → openssl rand -hex 32
+  #     PROD_INTERNAL_API_KEY    → openssl rand -hex 32
+  #     PROD_N8N_ENCRYPTION_KEY  → openssl rand -hex 32
+  #     PROD_N8N_PASSWORD        → mot de passe admin n8n
+  #     PROD_SENTRY_DSN          → DSN Sentry (laisser vide pour désactiver)
+  #     PROD_ALLOWED_ORIGINS     → ex: https://n8n.domain.com,https://app.domain.com
+  #     PROD_GRAFANA_PASSWORD    → openssl rand -hex 16
   deploy:
     name: Deploy to VPS
     runs-on: ubuntu-latest
@@ -51,7 +64,7 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     steps:
-      - name: Deploy via SSH
+      - name: Write .env and deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
@@ -63,6 +76,50 @@ jobs:
 
             # Récupérer le dernier code
             git pull origin main
+
+            # Écrire le .env prod depuis les secrets GitHub
+            # Le fichier est recréé à chaque deploy → toujours à jour
+            cat > .env << 'ENVEOF'
+            # ── PostgreSQL ──────────────────────────────────────
+            POSTGRES_USER=admin
+            POSTGRES_PASSWORD=${{ secrets.PROD_POSTGRES_PASSWORD }}
+            N8N_DB_NAME=n8n
+            API_DB_NAME=appdb
+
+            # ── Redis ───────────────────────────────────────────
+            REDIS_URL=redis://redis:6379/0
+
+            # ── n8n ─────────────────────────────────────────────
+            N8N_HOST=${{ secrets.PROD_N8N_HOST }}
+            N8N_PROTOCOL=https
+            N8N_WEBHOOK_URL=https://${{ secrets.PROD_N8N_HOST }}/
+            N8N_EDITOR_BASE_URL=https://${{ secrets.PROD_N8N_HOST }}/
+            N8N_BASIC_AUTH_ACTIVE=true
+            N8N_BASIC_AUTH_USER=admin
+            N8N_BASIC_AUTH_PASSWORD=${{ secrets.PROD_N8N_PASSWORD }}
+            N8N_ENCRYPTION_KEY=${{ secrets.PROD_N8N_ENCRYPTION_KEY }}
+            N8N_EXECUTIONS_MODE=queue
+
+            # ── FastAPI ──────────────────────────────────────────
+            API_SECRET_KEY=${{ secrets.PROD_API_SECRET_KEY }}
+            API_ENV=production
+            ALLOWED_ORIGINS=${{ secrets.PROD_ALLOWED_ORIGINS }}
+            INTERNAL_API_KEY=${{ secrets.PROD_INTERNAL_API_KEY }}
+            DATABASE_URL=postgresql+asyncpg://admin:${{ secrets.PROD_POSTGRES_PASSWORD }}@postgres:5432/appdb
+
+            # ── Celery ───────────────────────────────────────────
+            CELERY_CONCURRENCY=4
+            WEB_CONCURRENCY=4
+
+            # ── Monitoring ───────────────────────────────────────
+            SENTRY_DSN=${{ secrets.PROD_SENTRY_DSN }}
+            GRAFANA_PASSWORD=${{ secrets.PROD_GRAFANA_PASSWORD }}
+
+            # ── General ──────────────────────────────────────────
+            TIMEZONE=America/Cayenne
+            LOG_LEVEL=info
+            ENVEOF
+            chmod 600 .env
 
             # Rebuild uniquement les services modifiés + redémarrage sans downtime
             docker compose build api celery-worker celery-beat

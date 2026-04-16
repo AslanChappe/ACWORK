@@ -84,7 +84,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: ./api
-          dockerfile: Dockerfile
+          file: ./api/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -110,6 +110,7 @@ jobs:
   #     PROD_INTERNAL_API_KEY    → openssl rand -hex 32
   #     PROD_N8N_ENCRYPTION_KEY  → openssl rand -hex 32
   #     PROD_N8N_HOST            → ex: n8n.domain.com
+  #     PROD_N8N_PASSWORD        → mot de passe admin n8n
   #     PROD_SENTRY_DSN          → DSN Sentry (laisser vide pour désactiver)
   #     PROD_ALLOWED_ORIGINS     → ex: https://n8n.domain.com
   #     PROD_GRAFANA_PASSWORD    → openssl rand -hex 16
@@ -193,13 +194,14 @@ jobs:
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
             # Tirer l'image pré-buildée (plus rapide que de builder sur le VPS)
-            docker compose pull api celery-worker celery-beat
+            # -f docker-compose.yml : ignore docker-compose.override.yml (dev only)
+            docker compose -f docker-compose.yml pull api celery-worker celery-beat
 
             # Redémarrage sans downtime des services applicatifs
-            docker compose up -d --no-deps api celery-worker celery-beat
+            docker compose -f docker-compose.yml up -d --no-deps api celery-worker celery-beat
 
             # Vérification de santé post-deploy
-            sleep 5
+            sleep 10
             curl -sf http://localhost:8000/api/v1/ping || exit 1
 
             echo "Deployment successful — ${{ github.sha }}"

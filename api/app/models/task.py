@@ -2,12 +2,11 @@
 Task model — represents a unit of work triggered by n8n or the API.
 Extend this to track any async job you want to orchestrate.
 """
-import uuid
+
 from datetime import datetime
 from typing import Any
 
 from sqlalchemy import JSON, DateTime, String, Text
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import BaseModel
@@ -15,13 +14,14 @@ from app.models.base import BaseModel
 
 class TaskStatus(str):
     """String constants for task lifecycle states."""
-    PENDING   = "pending"
-    RUNNING   = "running"
-    SUCCESS   = "success"
-    FAILED    = "failed"
+
+    PENDING = "pending"
+    RUNNING = "running"
+    SUCCESS = "success"
+    FAILED = "failed"
     CANCELLED = "cancelled"
 
-    TERMINAL = {SUCCESS, FAILED, CANCELLED}   # états finaux
+    TERMINAL = {SUCCESS, FAILED, CANCELLED}  # états finaux
 
 
 class Task(BaseModel):

@@ -110,7 +110,6 @@ jobs:
   #     PROD_INTERNAL_API_KEY    → openssl rand -hex 32
   #     PROD_N8N_ENCRYPTION_KEY  → openssl rand -hex 32
   #     PROD_N8N_HOST            → ex: n8n.domain.com
-  #     PROD_N8N_PASSWORD        → mot de passe admin n8n
   #     PROD_SENTRY_DSN          → DSN Sentry (laisser vide pour désactiver)
   #     PROD_ALLOWED_ORIGINS     → ex: https://n8n.domain.com
   #     PROD_GRAFANA_PASSWORD    → openssl rand -hex 16
@@ -156,9 +155,6 @@ jobs:
             N8N_PROTOCOL=https
             N8N_WEBHOOK_URL=https://${{ secrets.PROD_N8N_HOST }}/
             N8N_EDITOR_BASE_URL=https://${{ secrets.PROD_N8N_HOST }}/
-            N8N_BASIC_AUTH_ACTIVE=true
-            N8N_BASIC_AUTH_USER=admin
-            N8N_BASIC_AUTH_PASSWORD=${{ secrets.PROD_N8N_PASSWORD }}
             N8N_ENCRYPTION_KEY=${{ secrets.PROD_N8N_ENCRYPTION_KEY }}
             N8N_EXECUTIONS_MODE=queue
 

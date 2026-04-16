@@ -7,6 +7,7 @@ Flux typique :
   3. n8n poll      GET /tasks/{id}      → lit le statut et le résultat
   4. (optionnel)   PATCH /tasks/{id}    → n8n peut écrire un résultat externe
 """
+
 import uuid
 from typing import Annotated
 
@@ -24,6 +25,7 @@ router = APIRouter()
 
 # ── Dependencies ───────────────────────────────────────────
 
+
 def get_task_service(db: Annotated[AsyncSession, Depends(get_db)]) -> TaskService:
     return TaskService(db)
 
@@ -33,6 +35,7 @@ def get_n8n_service() -> N8nService:
 
 
 # ── Endpoints ──────────────────────────────────────────────
+
 
 @router.post(
     "/",
@@ -133,9 +136,12 @@ async def trigger_n8n_workflow(
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    result = await n8n.trigger_webhook(webhook_path, {
-        "task_id": str(task.id),
-        "task_type": task.task_type,
-        "payload": task.payload,
-    })
+    result = await n8n.trigger_webhook(
+        webhook_path,
+        {
+            "task_id": str(task.id),
+            "task_type": task.task_type,
+            "payload": task.payload,
+        },
+    )
     return {"triggered": True, "n8n_response": result}

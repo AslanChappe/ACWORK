@@ -48,6 +48,9 @@ celery_app.conf.update(
     task_routes={
         "app.workers.tasks.run_task": {"queue": "tasks"},
     },
+    # Timeouts — évite qu'une tâche bloquée immobilise un worker indéfiniment
+    task_time_limit=300,  # 5 min hard kill (SIGKILL)
+    task_soft_time_limit=270,  # 4.5 min → SoftTimeLimitExceeded (SIGALRM) pour cleanup propre
     # Retry par défaut
     task_default_retry_delay=settings.celery_task_retry_backoff,
     task_max_retries=settings.celery_task_max_retries,

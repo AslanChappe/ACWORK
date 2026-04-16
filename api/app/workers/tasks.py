@@ -13,6 +13,7 @@ import uuid
 from typing import Any
 
 from celery import Task
+from celery.exceptions import SoftTimeLimitExceeded
 from celery.utils.log import get_task_logger
 
 from app.workers.celery_app import celery_app, celery_task_duration_seconds, celery_tasks_total
@@ -31,9 +32,7 @@ logger = get_task_logger(__name__)
     acks_late=True,
     track_started=True,
 )
-def run_task(
-    self: Task, task_id: str, task_type: str, payload: dict[str, Any]
-) -> dict[str, Any]:
+def run_task(self: Task, task_id: str, task_type: str, payload: dict[str, Any]) -> dict[str, Any]:
     """
     Point d'entrée unique pour toutes les tâches.
     Appelé via : run_task.delay(str(task.id), task.task_type, task.payload)
@@ -41,24 +40,25 @@ def run_task(
     Le wrapping asyncio.run() crée un event loop isolé par worker —
     compatible avec SQLAlchemy asyncpg et httpx.
     """
-    logger.info(
-        "task.start", extra={"task_id": task_id, "task_type": task_type}
-    )
+    logger.info("task.start", extra={"task_id": task_id, "task_type": task_type})
     try:
         return asyncio.run(_execute_task(task_id, task_type, payload))
-    except Exception as exc:
+    except SoftTimeLimitExceeded as exc:
+        # Tâche trop longue — marquer failed sans retry (la limite est une erreur définitive)
         logger.error(
-            "task.error", extra={"task_id": task_id, "error": str(exc)}
+            "task.timeout",
+            extra={"task_id": task_id, "task_type": task_type, "limit_seconds": 270},
         )
+        raise exc
+    except Exception as exc:
+        logger.error("task.error", extra={"task_id": task_id, "error": str(exc)})
         raise self.retry(exc=exc) from exc
 
 
 # ── Dispatcher async ───────────────────────────────────────
 
 
-async def _execute_task(
-    task_id: str, task_type: str, payload: dict[str, Any]
-) -> dict[str, Any]:
+async def _execute_task(task_id: str, task_type: str, payload: dict[str, Any]) -> dict[str, Any]:
     """
     Ouvre une session DB, met à jour le statut, dispatch selon task_type,
     puis sauvegarde le résultat. Tout en async.
@@ -67,8 +67,6 @@ async def _execute_task(
     appel Celery, et les connexions asyncpg sont liées à la loop qui les a créées.
     NullPool désactive le pooling → chaque tâche ouvre/ferme sa propre connexion.
     """
-    from app.core.config import get_settings
-    from app.services.task_service import TaskService
     from sqlalchemy.ext.asyncio import (
         AsyncSession,
         async_sessionmaker,
@@ -76,11 +74,12 @@ async def _execute_task(
     )
     from sqlalchemy.pool import NullPool
 
+    from app.core.config import get_settings
+    from app.services.task_service import TaskService
+
     _settings = get_settings()
     _engine = create_async_engine(_settings.database_url, poolclass=NullPool)
-    _Session = async_sessionmaker(
-        _engine, class_=AsyncSession, expire_on_commit=False
-    )
+    _Session = async_sessionmaker(_engine, class_=AsyncSession, expire_on_commit=False)
 
     _start = time.monotonic()
     try:
@@ -104,9 +103,7 @@ async def _execute_task(
                 celery_tasks_total.labels(task_type=task_type, status="failed").inc()
                 raise
     finally:
-        celery_task_duration_seconds.labels(task_type=task_type).observe(
-            time.monotonic() - _start
-        )
+        celery_task_duration_seconds.labels(task_type=task_type).observe(time.monotonic() - _start)
         await _engine.dispose()
 
 
@@ -125,9 +122,10 @@ async def _dispatch(task_type: str, payload: dict[str, Any]) -> dict[str, Any]:
     if handler:
         return await handler(payload)
 
-    # Type inconnu → log + réponse neutre (change en `raise` si tu veux rejeter)
-    logger.warning("task.unknown_type", extra={"task_type": task_type})
-    return {"task_type": task_type, "status": "processed", "payload": payload}
+    # Type inconnu → erreur explicite (la tâche sera marquée failed avec ce message)
+    raise ValueError(
+        f"Unknown task_type: {task_type!r}. " f"Registered types: {list(handlers.keys())}"
+    )
 
 
 # ── Handlers métier ────────────────────────────────────────
@@ -148,25 +146,17 @@ async def _handle_text_analysis(payload: dict[str, Any]) -> dict[str, Any]:
 
     words = text.split()
     sentences = [
-        s.strip()
-        for s in text.replace("!", ".").replace("?", ".").split(".")
-        if s.strip()
+        s.strip() for s in text.replace("!", ".").replace("?", ".").split(".") if s.strip()
     ]
 
     # Fréquence des mots (sans ponctuation, en minuscules)
     import re
 
-    clean_words = [
-        re.sub(r"[^\w]", "", w).lower()
-        for w in words
-        if re.sub(r"[^\w]", "", w)
-    ]
+    clean_words = [re.sub(r"[^\w]", "", w).lower() for w in words if re.sub(r"[^\w]", "", w)]
     freq: dict[str, int] = {}
     for w in clean_words:
         freq[w] = freq.get(w, 0) + 1
-    top_words = dict(
-        sorted(freq.items(), key=lambda x: x[1], reverse=True)[:10]
-    )
+    top_words = dict(sorted(freq.items(), key=lambda x: x[1], reverse=True)[:10])
 
     return {
         "word_count": len(words),

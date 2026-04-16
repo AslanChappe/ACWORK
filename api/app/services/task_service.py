@@ -2,8 +2,9 @@
 TaskService — async CRUD + business logic for tasks.
 Inject via FastAPI Depends().
 """
+
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -77,9 +78,9 @@ class TaskService:
 
         # Auto-set timestamps based on status transition
         if data.status == TaskStatus.RUNNING and not task.started_at:
-            task.started_at = datetime.now(timezone.utc)
+            task.started_at = datetime.now(UTC)
         if data.status in (TaskStatus.SUCCESS, TaskStatus.FAILED, TaskStatus.CANCELLED):
-            task.finished_at = datetime.now(timezone.utc)
+            task.finished_at = datetime.now(UTC)
 
         await self.db.flush()
         await self.db.refresh(task)
@@ -104,6 +105,4 @@ class TaskService:
         return await self.update(task_id, TaskUpdate(status=TaskStatus.SUCCESS, result=result))
 
     async def mark_failed(self, task_id: uuid.UUID, error: str) -> Task | None:
-        return await self.update(
-            task_id, TaskUpdate(status=TaskStatus.FAILED, error_message=error)
-        )
+        return await self.update(task_id, TaskUpdate(status=TaskStatus.FAILED, error_message=error))

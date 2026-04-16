@@ -1,10 +1,23 @@
-# n8n + FastAPI + PostgreSQL Stack
+# ACWORK
 
-Production-ready orchestration stack:
-- **n8n** — visual workflow orchestrator (self-hosted)
-- **FastAPI** — async Python API for complex business logic
-- **PostgreSQL** — shared database (separate DB per service)
-- **Nginx** — reverse proxy with SSL (production)
+ACWORK est une stack d'orchestration moderne qui combine :
+
+- `n8n` comme orchestrateur de workflows.
+- `FastAPI` comme backend asynchrone.
+- `PostgreSQL` pour la persistance.
+- `Redis` pour Celery (broker + backend).
+- `Celery` pour l'exécution de tâches en arrière-plan.
+- `Nginx` pour le reverse proxy et le SSL.
+
+Ce dépôt fournit un service API pour créer, suivre et traiter des tâches métiers, avec une intégration bidirectionnelle entre FastAPI et n8n.
+
+## Documentation complète
+
+La documentation complète et le rapport détaillé du projet sont disponibles dans :
+
+- `docs/project-report.md`
+
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -28,194 +41,107 @@ Production-ready orchestration stack:
          └─────────────────┘
 ```
 
----
-
 ## Quick start — local development
 
 ```bash
-# 1. Clone and enter
-git clone <repo> && cd <repo>
-
-# 2. Setup local env and start
-make local-setup          # copies .env.local → .env, then docker compose up -d
-
-# 3. Run migrations
-make migrate
-
-# 4. Open
-#   n8n    → http://localhost:5678
-#   API    → http://localhost:8000
-#   Docs   → http://localhost:8000/docs
-```
-
----
-
-## Deployment on VPS
-
-### Prerequisites
-- Docker + Docker Compose v2
-- Domain with DNS pointing to the VPS
-- SSL certificates (Let's Encrypt or your own)
-
-```bash
-# 1. Copy and fill production env
-cp .env.example .env
-nano .env                 # fill in all values
-
-# 2. Place SSL certs
-cp fullchain.pem nginx/ssl/api.crt
-cp privkey.pem  nginx/ssl/api.key
-cp fullchain.pem nginx/ssl/n8n.crt
-cp privkey.pem  nginx/ssl/n8n.key
-
-# 3. Update nginx/conf.d/*.conf with your real domain names
-
-# 4. Start in production mode (override file NOT loaded)
-make up
-
-# 5. Run migrations
+git clone <repo> && cd ACWORK
+make local-setup
 make migrate
 ```
 
----
+Puis ouvrir :
 
-## Make commands
+- `http://localhost:5678` pour n8n
+- `http://localhost:8000` pour l'API
+- `http://localhost:8000/docs` pour la documentation OpenAPI
+
+## Commandes clés
 
 | Command | Description |
 |---|---|
-| `make local-setup` | Copy `.env.local` → `.env` and start |
-| `make local-up` | Start with hot-reload (override loaded) |
-| `make local-down` | Stop all services |
-| `make local-logs` | Tail all logs |
-| `make up` | Start in production mode |
-| `make migrate` | Run Alembic migrations |
-| `make migrate-create MSG='...'` | Generate new migration |
-| `make shell-api` | Bash into the API container |
-| `make shell-db` | psql into appdb |
-| `make test` | Run pytest suite |
-| `make lint` | Ruff lint + format |
+| `make local-setup` | Copier `.env.local` → `.env` et démarrer la stack locale |
+| `make local-up` | Démarrer les services en mode développement |
+| `make local-down` | Arrêter la stack |
+| `make local-logs` | Afficher les logs des services |
+| `make up` | Démarrer en mode production |
+| `make down` | Arrêter en mode production |
+| `make migrate` | Appliquer les migrations Alembic |
+| `make migrate-create MSG='...'` | Générer une nouvelle migration |
+| `make shell-api` | Ouvrir un shell dans le container API |
+| `make shell-db` | Ouvrir `psql` dans la base `appdb` |
+| `make test-local` | Exécuter les tests localement avec SQLite |
+| `make lint-local` | Linter et formater le code localement |
 
----
+## Démarrage production
 
-## Project structure
+1. Copier `.env.example` en `.env` et remplir les valeurs.
+2. Placer les certificats SSL dans `nginx/ssl/`.
+3. Ajuster les fichiers `nginx/conf.d/*.conf` avec le ou les domaines.
+4. Lancer :
+
+```bash
+make up
+make migrate
+```
+
+## Structure du projet
 
 ```
 .
 ├── docker-compose.yml          # Production services
-├── docker-compose.override.yml # Local dev overrides (auto-loaded)
-├── .env.example                # Template — copy to .env
-├── .env.local                  # Ready-to-use local config
-├── Makefile                    # Shortcut commands
-│
-├── nginx/
-│   ├── nginx.conf              # Main nginx config
-│   └── conf.d/
-│       ├── api.conf            # FastAPI vhost
-│       └── n8n.conf            # n8n vhost (with WS support)
-│
-├── postgres/
-│   └── init.sql                # Creates n8n + appdb databases
-│
-└── api/
-    ├── Dockerfile              # Production multi-stage build
-    ├── Dockerfile.dev          # Development with hot-reload
-    ├── pyproject.toml          # Dependencies (Python 3.12)
-    ├── alembic.ini
-    ├── alembic/
-    │   ├── env.py              # Async Alembic config
-    │   └── versions/           # Migration files
-    └── app/
-        ├── main.py             # FastAPI app factory + lifespan
-        ├── core/
-        │   ├── config.py       # Settings (pydantic-settings)
-        │   ├── database.py     # Async SQLAlchemy engine + session
-        │   ├── logging.py      # Structured logging (structlog)
-        │   └── http_client.py  # Shared httpx client
-        ├── models/
-        │   ├── base.py         # UUID + timestamp mixins
-        │   └── task.py         # Task model
-        ├── schemas/
-        │   └── task.py         # Pydantic request/response schemas
-        ├── services/
-        │   ├── task_service.py # Async CRUD for tasks
-        │   └── n8n_service.py  # n8n webhook + API client
-        └── api/v1/
-            ├── router.py
-            └── endpoints/
-                ├── health.py   # /health + /ping
-                └── tasks.py    # Full task CRUD + n8n trigger
+├── docker-compose.override.yml # Dev overrides
+├── .env.example                # Modèle de configuration
+├── .env.local                  # Configuration locale prête à l'emploi
+├── Makefile                    # Raccourcis de commandes
+├── nginx/                      # Reverse proxy et SSL
+├── postgres/                   # Initialisation des bases de données
+├── api/                        # Backend FastAPI + Celery + migrations
+├── docs/                       # Documentation du projet
+├── monitoring/                 # Prometheus / Grafana
+├── n8n/                        # Workflows n8n
+└── scripts/                    # Utilitaires d'administration
 ```
 
----
+## API et intégration n8n
 
-## n8n ↔ API integration patterns
+Le backend expose un ensemble de routes sous `/api/v1` :
 
-### Pattern 1 — n8n triggers API
+- `GET /health` — état du service et dépendances
+- `GET /ping` — probe simple de l'API
+- `POST /tasks/` — créer une tâche et lancer son exécution
+- `GET /tasks/` — lister les tâches
+- `GET /tasks/{task_id}` — lire le statut d'une tâche
+- `PATCH /tasks/{task_id}` — mettre à jour une tâche existante
+- `DELETE /tasks/{task_id}` — supprimer une tâche
+- `POST /tasks/{task_id}/trigger-n8n` — redéclencher un webhook n8n avec le payload enregistré
 
-In n8n, use an **HTTP Request** node pointing to:
-```
-POST http://api:8000/api/v1/tasks/
-Body: { "name": "my-job", "task_type": "report", "payload": {...} }
-```
+## Concept de tâches
 
-The API creates the task, processes it asynchronously, and returns `201` immediately.
+Chaque tâche est sauvegardée en base de données dans le modèle `Task` et passe par un cycle de vie :
 
-### Pattern 2 — API triggers n8n
+- `pending`
+- `running`
+- `success`
+- `failed`
+- `cancelled`
 
-From your Python code, call `N8nService.trigger_webhook()`:
-```python
-from app.services.n8n_service import N8nService
+La logique métier est exécutée en arrière-plan par Celery, puis les résultats sont persistés.
 
-result = await n8n_service.trigger_webhook("my-workflow", {"data": "..."})
-```
+## Monitoring
 
-### Pattern 3 — n8n polls task status
+- Métriques Prometheus disponibles sur `/metrics`.
+- Dashboards Grafana fournis dans `monitoring/grafana/`.
+- Logs structurés via `structlog`.
 
-After creating a task, n8n polls:
-```
-GET http://api:8000/api/v1/tasks/{task_id}
-```
-until `status` is `success` or `failed`.
+## Ajouter un nouveau type de tâche
 
-### Pattern 4 — API callbacks n8n
+1. Ajouter un handler dans `api/app/workers/tasks.py`.
+2. Ajouter le type dans le dictionnaire `handlers` de `_dispatch()`.
+3. La nouvelle tâche sera traitée par l'architecture Celery existante.
 
-Use n8n's **Webhook** node as a callback URL. Pass it in the task payload and
-call it from Python when processing is done.
+## Documentation détaillée
 
----
+Pour une description complète du projet, consulter :
 
-## Adding a new task type
-
-1. Add a handler in [api/app/api/v1/endpoints/tasks.py](api/app/api/v1/endpoints/tasks.py) inside `_process_task()`:
-
-```python
-if task_type == "my_new_type":
-    result = await my_handler(payload)
-```
-
-2. Optionally create a dedicated service in `api/app/services/`.
-
-3. Generate a migration if you added models:
-```bash
-make migrate-create MSG="add my_new_model"
-make migrate
-```
-
----
-
-## Environment variables reference
-
-| Variable | Required | Description |
-|---|---|---|
-| `POSTGRES_USER` | yes | DB superuser |
-| `POSTGRES_PASSWORD` | yes | DB password |
-| `N8N_DB_NAME` | yes | n8n database name |
-| `API_DB_NAME` | yes | API database name |
-| `N8N_HOST` | yes | n8n public hostname |
-| `N8N_ENCRYPTION_KEY` | yes | n8n secrets key (32+ chars) |
-| `N8N_BASIC_AUTH_USER` | yes | n8n login |
-| `N8N_BASIC_AUTH_PASSWORD` | yes | n8n password |
-| `API_SECRET_KEY` | yes | API JWT/session key |
-| `API_ENV` | no | `development` or `production` |
-| `LOG_LEVEL` | no | `debug`/`info`/`warning` |
+- `docs/project-report.md`
 | `TIMEZONE` | no | e.g. `Europe/Paris` |

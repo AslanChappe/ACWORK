@@ -57,7 +57,7 @@ services:
 
   # ── n8n ────────────────────────────────────────────────────
   n8n:
-    image: n8nio/n8n:latest
+    image: n8nio/n8n:2.16.0
     container_name: n8n
     restart: unless-stopped
     deploy:
@@ -78,9 +78,8 @@ services:
       WEBHOOK_URL: ${N8N_WEBHOOK_URL}
       N8N_EDITOR_BASE_URL: ${N8N_EDITOR_BASE_URL}
       # Auth
-      N8N_BASIC_AUTH_ACTIVE: ${N8N_BASIC_AUTH_ACTIVE:-true}
-      N8N_BASIC_AUTH_USER: ${N8N_BASIC_AUTH_USER}
-      N8N_BASIC_AUTH_PASSWORD: ${N8N_BASIC_AUTH_PASSWORD}
+      # Auth — n8n 2.x utilise le système owner account (setup via UI au premier lancement)
+      # N8N_BASIC_AUTH_* a été supprimé depuis n8n 1.0
       # Database
       DB_TYPE: postgresdb
       DB_POSTGRESDB_HOST: postgres
@@ -144,7 +143,7 @@ services:
     networks:
       - internal
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/api/v1/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/api/v1/ping || exit 1"]
       interval: 20s
       timeout: 5s
       retries: 3

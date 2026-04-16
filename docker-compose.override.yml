@@ -18,7 +18,6 @@ services:
   n8n:
     environment:
       N8N_PROTOCOL: http
-      N8N_BASIC_AUTH_ACTIVE: "false"
       EXECUTIONS_DATA_SAVE_ON_SUCCESS: all
       N8N_EXECUTIONS_MODE: queue          # queue mode actif même en local
     ports:
@@ -36,7 +35,9 @@ services:
       - ./api:/app
     ports:
       - "8000:8000"
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/app
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/app"
 
   celery-worker:
     build:

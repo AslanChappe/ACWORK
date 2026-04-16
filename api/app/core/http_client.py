@@ -2,6 +2,7 @@
 Shared async HTTP client — reused across the app lifetime.
 Use this to call n8n webhooks or any external service.
 """
+
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 

@@ -2,6 +2,7 @@
 N8nService — trigger n8n webhooks and query the n8n API.
 n8n acts as orchestrator; this service is the bridge from Python → n8n.
 """
+
 from typing import Any
 
 import httpx

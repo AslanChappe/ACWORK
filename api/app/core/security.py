@@ -7,6 +7,7 @@ Les routes /health et /ping restent publiques (monitoring).
 Usage n8n : ajouter le header dans chaque nœud HTTP Request :
   X-API-Key: <valeur de INTERNAL_API_KEY dans le .env>
 """
+
 from fastapi import HTTPException, Security, status
 from fastapi.security import APIKeyHeader
 
@@ -30,6 +31,7 @@ async def verify_api_key(api_key: str | None = Security(_API_KEY_HEADER)) -> Non
         if settings.is_dev:
             # Dev sans clé configurée — autorisé mais signalé
             import logging
+
             logging.getLogger("api.security").warning(
                 "INTERNAL_API_KEY not set — auth disabled in dev mode"
             )

@@ -69,16 +69,14 @@ async def test_dispatch_text_analysis():
 
 
 @pytest.mark.asyncio
-async def test_dispatch_unknown_type_returns_neutral():
-    """Un type inconnu ne lève pas d'exception — retourne une réponse neutre."""
-    result = await _dispatch("type_inconnu", {"data": 42})
-    assert result["task_type"] == "type_inconnu"
-    assert result["status"] == "processed"
-    assert result["payload"] == {"data": 42}
+async def test_dispatch_unknown_type_raises():
+    """Un type inconnu lève une ValueError explicite (tâche marquée failed en prod)."""
+    with pytest.raises(ValueError, match="Unknown task_type"):
+        await _dispatch("type_inconnu", {"data": 42})
 
 
 @pytest.mark.asyncio
-async def test_dispatch_preserves_payload_for_unknown():
-    payload = {"key": "value", "nested": {"a": 1}}
-    result = await _dispatch("unknown_type", payload)
-    assert result["payload"] == payload
+async def test_dispatch_unknown_type_includes_registered_types():
+    """Le message d'erreur liste les types enregistrés pour faciliter le debug."""
+    with pytest.raises(ValueError, match="text_analysis"):
+        await _dispatch("unknown_type", {})

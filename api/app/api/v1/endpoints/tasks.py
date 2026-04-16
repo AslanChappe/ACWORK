@@ -126,7 +126,11 @@ async def trigger_n8n_workflow(
     task_id: uuid.UUID,
     service: Annotated[TaskService, Depends(get_task_service)],
     n8n: Annotated[N8nService, Depends(get_n8n_service)],
-    webhook_path: str = Query(..., description="Chemin du webhook n8n à appeler"),
+    webhook_path: str = Query(
+        ...,
+        description="Chemin du webhook n8n à appeler",
+        pattern=r"^[a-zA-Z0-9_-]+(/[a-zA-Z0-9_-]+)*$",
+    ),
 ) -> dict:
     """
     Relit une tâche existante et envoie son payload vers un webhook n8n.

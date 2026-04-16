@@ -8,6 +8,8 @@ Usage n8n : ajouter le header dans chaque nœud HTTP Request :
   X-API-Key: <valeur de INTERNAL_API_KEY dans le .env>
 """
 
+import hmac
+
 from fastapi import HTTPException, Security, status
 from fastapi.security import APIKeyHeader
 
@@ -42,7 +44,7 @@ async def verify_api_key(api_key: str | None = Security(_API_KEY_HEADER)) -> Non
             detail="API authentication not configured on server",
         )
 
-    if api_key != settings.internal_api_key:
+    if not hmac.compare_digest(api_key or "", settings.internal_api_key):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or missing X-API-Key header",

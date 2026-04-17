@@ -19,7 +19,7 @@ services:
     environment:
       N8N_PROTOCOL: http
       EXECUTIONS_DATA_SAVE_ON_SUCCESS: all
-      N8N_EXECUTIONS_MODE: queue          # queue mode actif même en local
+      N8N_EXECUTIONS_MODE: regular
     ports:
       - "5678:5678"
 

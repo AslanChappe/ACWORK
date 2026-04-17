@@ -88,7 +88,7 @@ services:
       DB_POSTGRESDB_USER: ${POSTGRES_USER}
       DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
       # Queue mode — Redis comme broker de workflow
-      EXECUTIONS_MODE: ${N8N_EXECUTIONS_MODE:-queue}
+      EXECUTIONS_MODE: ${N8N_EXECUTIONS_MODE:-regular}
       QUEUE_BULL_REDIS_HOST: redis
       QUEUE_BULL_REDIS_PORT: 6379
       QUEUE_BULL_REDIS_DB: 1          # DB 1 → isolé du broker Celery (DB 0)

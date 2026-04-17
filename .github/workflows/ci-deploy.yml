@@ -9,7 +9,7 @@ on:
 env:
   REGISTRY: ghcr.io
   # Nom de l'image en minuscules (Docker n'accepte pas les majuscules)
-  IMAGE_NAME: ${{ github.repository_owner }}/acwork-api
+  IMAGE_NAME: aslanchappe/acwork-api
 
 jobs:
   # ── Tests + Lint ────────────────────────────────────────────
@@ -79,6 +79,7 @@ jobs:
           tags: |
             type=sha,format=long
             type=raw,value=latest
+            type=raw,value=${{ github.sha }}
 
       - name: Build and push
         uses: docker/build-push-action@v5

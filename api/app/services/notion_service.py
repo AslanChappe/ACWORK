@@ -129,18 +129,19 @@ async def _update_links_in_page(
 # ── Utilitaires ────────────────────────────────────────────────────────────────
 
 
-async def _get_title_property_name(
+async def _get_db_properties(
     database_id: str,
     headers: dict,
     client: httpx.AsyncClient,
-) -> str:
+) -> dict[str, str]:
+    """Retourne un dict {nom_propriété: type} pour la base de données."""
     resp = await client.get(f"{BASE_URL}/databases/{database_id}", headers=headers)
     resp.raise_for_status()
-    db = resp.json()
-    for name, prop in db.get("properties", {}).items():
-        if prop.get("type") == "title":
-            return name
-    return "Name"
+    return {name: prop.get("type", "") for name, prop in resp.json().get("properties", {}).items()}
+
+
+def _find_prop(props: dict[str, str], prop_type: str) -> str | None:
+    return next((name for name, t in props.items() if t == prop_type), None)
 
 
 # ── Point d'entrée principal ───────────────────────────────────────────────────
@@ -172,12 +173,12 @@ async def create_page_from_template(
     hdrs = _headers(api_key)
 
     async with httpx.AsyncClient(timeout=180.0) as client:
-        # 1. Nom exact de la propriété titre
-        title_prop = await _get_title_property_name(database_id, hdrs, client)
+        # 1. Propriétés de la base (titre + statut auto-détectés)
+        db_props = await _get_db_properties(database_id, hdrs, client)
+        title_prop = _find_prop(db_props, "title") or "Name"
+        status_prop = status_property or _find_prop(db_props, "status")
 
         properties: dict = {title_prop: {"title": [{"text": {"content": title}}]}}
-        if status_property:
-            properties[status_property] = {"status": {"name": status_value}}
 
         # 2. Créer la page principale avec template_id
         create_resp = await client.post(
@@ -198,6 +199,14 @@ async def create_page_from_template(
 
         # 3. Attendre le remplissage asynchrone du template
         await _wait_for_page_content(page_id, hdrs, client)
+
+        # Forcer le statut après remplissage (le template peut avoir un statut différent)
+        if status_prop and status_value:
+            await client.patch(
+                f"{BASE_URL}/pages/{page_id}",
+                headers=hdrs,
+                json={"properties": {status_prop: {"status": {"name": status_value}}}},
+            )
 
         # 4. Créer les sous-pages liées et mettre à jour les liens internes
         sub_pages_created: list[dict] = []

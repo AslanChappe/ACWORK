@@ -197,16 +197,22 @@ async def create_page_from_template(
         new_page = create_resp.json()
         page_id = new_page["id"]
 
-        # 3. Attendre le remplissage asynchrone du template
+        # 3. Attendre le remplissage asynchrone du template (blocs + propriétés)
         await _wait_for_page_content(page_id, hdrs, client)
+        # Délai supplémentaire : le statut est parfois appliqué après les blocs
+        await asyncio.sleep(5)
 
-        # Forcer le statut après remplissage (le template peut avoir un statut différent)
+        # Forcer le statut — écrase ce que le template a appliqué
         if status_prop and status_value:
-            await client.patch(
+            patch_resp = await client.patch(
                 f"{BASE_URL}/pages/{page_id}",
                 headers=hdrs,
                 json={"properties": {status_prop: {"status": {"name": status_value}}}},
             )
+            if not patch_resp.is_success:
+                raise ValueError(
+                    f"Status PATCH failed [{patch_resp.status_code}]: {patch_resp.text}"
+                )
 
         # 4. Créer les sous-pages liées et mettre à jour les liens internes
         sub_pages_created: list[dict] = []

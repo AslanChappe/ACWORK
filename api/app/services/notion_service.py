@@ -186,7 +186,7 @@ async def create_page_from_template(
             json={
                 "parent": {"database_id": database_id},
                 "properties": properties,
-                "template": {"template_id": template_page_id},
+                "template": {"type": "template_id", "template_id": template_page_id},
             },
         )
         if not create_resp.is_success:

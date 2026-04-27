@@ -144,6 +144,9 @@ def _clean_block(block: dict) -> dict | None:
     ):
         content.pop(field, None)
 
+    # Notion refuse les valeurs null — retirer tous les champs à None
+    content = {k: v for k, v in content.items() if v is not None}
+
     if "rich_text" in content:
         content["rich_text"] = [_clean_rich_text(rt) for rt in content["rich_text"]]
 

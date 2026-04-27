@@ -213,7 +213,7 @@ async def create_page_from_template(
                 json={
                     "parent": {"page_id": page_id},
                     "properties": {"title": {"title": [{"text": {"content": sub_title}}]}},
-                    "template": {"template_id": sub["template_id"]},
+                    "template": {"type": "template_id", "template_id": sub["template_id"]},
                 },
             )
             if not sub_resp.is_success:

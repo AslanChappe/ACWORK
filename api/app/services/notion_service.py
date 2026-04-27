@@ -134,8 +134,13 @@ async def _get_db_properties(
     headers: dict,
     client: httpx.AsyncClient,
 ) -> dict[str, str]:
-    """Retourne un dict {nom_propriété: type} pour la base de données."""
-    resp = await client.get(f"{BASE_URL}/databases/{database_id}", headers=headers)
+    """
+    Retourne un dict {nom_propriété: type} pour la base de données.
+    Utilise Notion-Version 2022-06-28 : la version 2026-03-11 retourne
+    un format data_sources sans champ properties.
+    """
+    compat_headers = {**headers, "Notion-Version": "2022-06-28"}
+    resp = await client.get(f"{BASE_URL}/databases/{database_id}", headers=compat_headers)
     resp.raise_for_status()
     return {name: prop.get("type", "") for name, prop in resp.json().get("properties", {}).items()}
 

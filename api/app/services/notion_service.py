@@ -108,6 +108,22 @@ _EXCLUDED_TYPES = frozenset(
 )
 
 
+_MEDIA_TYPES = frozenset({"image", "video", "audio", "file", "pdf"})
+
+
+def _clean_media_block(block_type: str, content: dict) -> dict | None:
+    """
+    Blocs média : seul le sous-type 'external' peut être recréé via API.
+    Les fichiers Notion-hébergés ('file') ont des URLs expirables — on les ignore.
+    """
+    media_type = content.get("type")
+    if media_type == "external":
+        url = content.get("external", {}).get("url", "")
+        if url:
+            return {"type": block_type, block_type: {"type": "external", "external": {"url": url}}}
+    return None
+
+
 def _clean_block(block: dict) -> dict | None:
     """Supprime les champs read-only d'un bloc Notion pour pouvoir le recréer."""
     block_type = block.get("type")
@@ -115,6 +131,10 @@ def _clean_block(block: dict) -> dict | None:
         return None
 
     content = dict(block.get(block_type) or {})
+
+    if block_type in _MEDIA_TYPES:
+        return _clean_media_block(block_type, content)
+
     for field in (
         "created_time",
         "last_edited_time",

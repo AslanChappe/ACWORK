@@ -20,6 +20,7 @@ class NotionFromTemplateRequest(BaseModel):
     status_property: str | None = None
     status_value: str = "Not Started"
     linked_sub_templates: list[LinkedSubTemplate] | None = None
+    call_blocks: list[dict] | None = None
 
 
 @router.post("/create-from-template")
@@ -42,6 +43,7 @@ async def notion_create_from_template(
             linked_sub_templates=[s.model_dump() for s in body.linked_sub_templates]
             if body.linked_sub_templates
             else None,
+            call_blocks=body.call_blocks,
         )
         return result
     except Exception as exc:

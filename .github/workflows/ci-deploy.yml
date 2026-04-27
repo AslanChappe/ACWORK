@@ -165,6 +165,7 @@ jobs:
             API_ENV=production
             ALLOWED_ORIGINS=${{ secrets.PROD_ALLOWED_ORIGINS }}
             INTERNAL_API_KEY=${{ secrets.PROD_INTERNAL_API_KEY }}
+            NOTION_API_KEY=${{ secrets.PROD_NOTION_API_KEY }}
             DATABASE_URL=postgresql+asyncpg://admin:${{ secrets.PROD_POSTGRES_PASSWORD }}@postgres:5432/appdb
 
             # ── Celery ───────────────────────────────────────────

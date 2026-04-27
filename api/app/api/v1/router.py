@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 
-from app.api.v1.endpoints import health, tasks
+from app.api.v1.endpoints import health, notion, tasks
 from app.core.security import verify_api_key
 
 router = APIRouter()
@@ -13,5 +13,13 @@ router.include_router(
     tasks.router,
     prefix="/tasks",
     tags=["tasks"],
+    dependencies=[Depends(verify_api_key)],
+)
+
+# Notion : protégé par X-API-Key
+router.include_router(
+    notion.router,
+    prefix="/notion",
+    tags=["notion"],
     dependencies=[Depends(verify_api_key)],
 )

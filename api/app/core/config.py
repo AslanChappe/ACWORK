@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     n8n_base_url: str = "http://n8n:5678"
     n8n_api_key: str = ""
 
+    # ── Notion integration ─────────────────────────────────
+    notion_api_key: str = ""
+
     # ── Monitoring ─────────────────────────────────────────
     sentry_dsn: str = ""  # laisser vide pour désactiver
 

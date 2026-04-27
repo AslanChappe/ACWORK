@@ -97,10 +97,21 @@ def _replace_refs_in_blocks(blocks: list, replacements: dict) -> list:
     return out
 
 
+_EXCLUDED_TYPES = frozenset(
+    {
+        "unsupported",
+        "child_page",
+        "child_database",
+        "synced_block",  # blocs synchronisés — non créables via API
+        "template",  # boutons template Notion
+    }
+)
+
+
 def _clean_block(block: dict) -> dict | None:
     """Supprime les champs read-only d'un bloc Notion pour pouvoir le recréer."""
     block_type = block.get("type")
-    if not block_type or block_type in ("unsupported", "child_page", "child_database"):
+    if not block_type or block_type in _EXCLUDED_TYPES:
         return None
 
     content = dict(block.get(block_type) or {})
@@ -201,7 +212,10 @@ async def _create_sub_page_from_template(
             headers=headers,
             json={"children": template_blocks[i : i + 100]},
         )
-        patch_resp.raise_for_status()
+        if not patch_resp.is_success:
+            raise ValueError(
+                f"Notion PATCH blocks failed [{patch_resp.status_code}]: {patch_resp.text}"
+            )
 
     return sub_page_id
 
@@ -275,7 +289,10 @@ async def create_page_from_template(
                 headers=hdrs,
                 json={"children": template_blocks[i : i + 100]},
             )
-            patch_resp.raise_for_status()
+            if not patch_resp.is_success:
+                raise ValueError(
+                    f"Notion PATCH blocks failed [{patch_resp.status_code}]: {patch_resp.text}"
+                )
 
     return {
         "page_id": page_id,

@@ -202,9 +202,9 @@ jobs:
             # Redémarrage sans downtime des services applicatifs
             docker compose -f docker-compose.yml up -d --no-deps api celery-worker celery-beat
 
-            # Vérification de santé post-deploy
+            # Vérification de santé post-deploy (via réseau interne Docker)
             sleep 10
-            curl -sf http://localhost:8000/api/v1/ping || exit 1
+            docker compose -f docker-compose.yml exec -T api wget -qO- http://localhost:8000/api/v1/ping || exit 1
 
             echo "Deployment successful — ${{ github.sha }}"
             echo "Image: ghcr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}"

@@ -1,14 +1,25 @@
 """
-Notion API service — création de page depuis un template.
-Copie récursive de tous les blocs (nesting inclus).
-Les sous-pages liées (ex: tableau de bord) sont créées en tant que sub-pages
-de la page principale, et les références dans les blocs sont remplacées.
+Notion API service — duplication complète d'une page template.
+Copie récursive de tous les blocs, y compris les fichiers hébergés par Notion
+(re-téléchargés puis re-uploadés via l'API File Uploads).
 """
 
 import httpx
 
 NOTION_VERSION = "2022-06-28"
 BASE_URL = "https://api.notion.com/v1"
+
+_EXCLUDED_TYPES = frozenset(
+    {
+        "unsupported",
+        "child_page",
+        "child_database",
+        "synced_block",
+        "template",
+    }
+)
+
+_MEDIA_TYPES = frozenset({"image", "video", "audio", "file", "pdf"})
 
 
 def _headers(api_key: str) -> dict:
@@ -20,12 +31,13 @@ def _headers(api_key: str) -> dict:
 
 
 def _norm(page_id: str) -> str:
-    """Normalise un ID Notion (supprime les tirets pour comparer)."""
     return page_id.replace("-", "").lower()
 
 
+# ── Rich text ──────────────────────────────────────────────────────────────────
+
+
 def _clean_rich_text(rt: dict) -> dict:
-    """Préserve mentions, hyperliens et formatage."""
     rt_type = rt.get("type", "text")
 
     if rt_type == "mention":
@@ -48,7 +60,6 @@ def _clean_rich_text(rt: dict) -> dict:
 
 
 def _replace_refs_in_rich_text(rich_text: list, replacements: dict) -> list:
-    """Remplace les mentions de page dans le rich_text."""
     out = []
     for rt in rich_text:
         rt = dict(rt)
@@ -66,7 +77,6 @@ def _replace_refs_in_rich_text(rich_text: list, replacements: dict) -> list:
 
 
 def _replace_refs_in_blocks(blocks: list, replacements: dict) -> list:
-    """Remplace récursivement tous les liens/mentions vers les IDs originaux."""
     out = []
     for block in blocks:
         block = dict(block)
@@ -82,59 +92,113 @@ def _replace_refs_in_blocks(blocks: list, replacements: dict) -> list:
 
         elif block_type:
             content = dict(block.get(block_type) or {})
-
             if "rich_text" in content:
                 content["rich_text"] = _replace_refs_in_rich_text(
                     content["rich_text"], replacements
                 )
-
             if "children" in content:
                 content["children"] = _replace_refs_in_blocks(content["children"], replacements)
-
             block[block_type] = content
 
         out.append(block)
     return out
 
 
-_EXCLUDED_TYPES = frozenset(
-    {
-        "unsupported",
-        "child_page",
-        "child_database",
-        "synced_block",  # blocs synchronisés — non créables via API
-        "template",  # boutons template Notion
-    }
-)
+# ── File upload (pour copier les fichiers hébergés par Notion) ─────────────────
 
 
-_MEDIA_TYPES = frozenset({"image", "video", "audio", "file", "pdf"})
-
-
-def _clean_media_block(block_type: str, content: dict) -> dict | None:
+async def _reupload_notion_file(
+    file_url: str,
+    api_key: str,
+    client: httpx.AsyncClient,
+) -> str | None:
     """
-    Blocs média : seul le sous-type 'external' peut être recréé via API.
-    Les fichiers Notion-hébergés ('file') ont des URLs expirables — on les ignore.
+    Télécharge un fichier hébergé par Notion (URL S3 temporaire)
+    et le re-uploade via l'API Notion File Uploads.
+    Retourne l'upload ID ou None si échec.
+    """
+    notion_hdrs = _headers(api_key)
+
+    try:
+        # 1. Créer une session d'upload
+        create_resp = await client.post(
+            f"{BASE_URL}/file_uploads",
+            headers=notion_hdrs,
+            json={"mode": "single_part"},
+        )
+        if not create_resp.is_success:
+            return None
+
+        upload_data = create_resp.json()
+        upload_id: str = upload_data["id"]
+        upload_url: str = upload_data.get("upload_url", "")
+        if not upload_url:
+            return None
+
+        # 2. Télécharger le fichier original (URL S3 pre-signed)
+        file_resp = await client.get(file_url)
+        if not file_resp.is_success:
+            return None
+
+        content_type = file_resp.headers.get("content-type", "application/octet-stream")
+        filename = file_url.split("?")[0].rsplit("/", 1)[-1] or "file"
+
+        # 3. Uploader vers Notion (multipart form-data)
+        upload_resp = await client.post(
+            upload_url,
+            headers={"Authorization": f"Bearer {api_key}", "Notion-Version": NOTION_VERSION},
+            files={"file": (filename, file_resp.content, content_type)},
+        )
+        if not upload_resp.is_success:
+            return None
+
+        return upload_id
+
+    except Exception:
+        return None
+
+
+# ── Nettoyage des blocs ────────────────────────────────────────────────────────
+
+
+async def _clean_media_block(
+    block_type: str,
+    content: dict,
+    api_key: str,
+    client: httpx.AsyncClient,
+) -> dict | None:
+    """
+    Gère les blocs média :
+    - external → préservé tel quel
+    - file (Notion-hébergé) → re-uploadé via File Uploads API
     """
     media_type = content.get("type")
+
     if media_type == "external":
         url = content.get("external", {}).get("url", "")
         if url:
             return {"type": block_type, block_type: {"type": "external", "external": {"url": url}}}
+
+    elif media_type == "file":
+        url = content.get("file", {}).get("url", "")
+        if url:
+            upload_id = await _reupload_notion_file(url, api_key, client)
+            if upload_id:
+                return {
+                    "type": block_type,
+                    block_type: {"type": "file_upload", "file_upload": {"id": upload_id}},
+                }
+
     return None
 
 
-def _clean_block(block: dict) -> dict | None:
-    """Supprime les champs read-only d'un bloc Notion pour pouvoir le recréer."""
+def _clean_block_sync(block: dict) -> dict | None:
+    """Nettoyage synchrone pour les blocs non-média."""
     block_type = block.get("type")
-    if not block_type or block_type in _EXCLUDED_TYPES:
+    if not block_type or block_type in _EXCLUDED_TYPES or block_type in _MEDIA_TYPES:
         return None
 
     content = dict(block.get(block_type) or {})
-
-    if block_type in _MEDIA_TYPES:
-        return _clean_media_block(block_type, content)
-
     for field in (
         "created_time",
         "last_edited_time",
@@ -144,7 +208,7 @@ def _clean_block(block: dict) -> dict | None:
     ):
         content.pop(field, None)
 
-    # Notion refuse les valeurs null — retirer tous les champs à None
+    # Notion refuse null — on supprime tous les champs à None
     content = {k: v for k, v in content.items() if v is not None}
 
     if "rich_text" in content:
@@ -153,12 +217,16 @@ def _clean_block(block: dict) -> dict | None:
     return {"type": block_type, block_type: content}
 
 
+# ── Récupération récursive ─────────────────────────────────────────────────────
+
+
 async def _fetch_blocks_recursive(
     block_id: str,
     headers: dict,
     client: httpx.AsyncClient,
+    api_key: str,
 ) -> list[dict]:
-    """Récupère tous les blocs d'une page, y compris les enfants imbriqués."""
+    """Récupère tous les blocs, y compris les enfants imbriqués et les fichiers."""
     blocks: list[dict] = []
     cursor: str | None = None
 
@@ -172,10 +240,18 @@ async def _fetch_blocks_recursive(
         data = resp.json()
 
         for block in data.get("results", []):
-            cleaned = _clean_block(block)
+            block_type = block.get("type")
+
+            if block_type in _MEDIA_TYPES:
+                cleaned = await _clean_media_block(
+                    block_type, block.get(block_type) or {}, api_key, client
+                )
+            else:
+                cleaned = _clean_block_sync(block)
+
             if cleaned:
                 if block.get("has_children"):
-                    children = await _fetch_blocks_recursive(block["id"], headers, client)
+                    children = await _fetch_blocks_recursive(block["id"], headers, client, api_key)
                     if children:
                         cleaned[cleaned["type"]]["children"] = children
                 blocks.append(cleaned)
@@ -187,20 +263,20 @@ async def _fetch_blocks_recursive(
     return blocks
 
 
+# ── Utilitaires ────────────────────────────────────────────────────────────────
+
+
 async def _get_title_property_name(
     database_id: str,
     headers: dict,
     client: httpx.AsyncClient,
 ) -> str:
-    """Retourne le nom de la propriété titre de la base de données."""
     resp = await client.get(f"{BASE_URL}/databases/{database_id}", headers=headers)
     resp.raise_for_status()
     db = resp.json()
-
     for name, prop in db.get("properties", {}).items():
         if prop.get("type") == "title":
             return name
-
     return "Name"
 
 
@@ -208,14 +284,10 @@ async def _create_sub_page_from_template(
     parent_page_id: str,
     template_id: str,
     title: str,
+    api_key: str,
     headers: dict,
     client: httpx.AsyncClient,
 ) -> str:
-    """
-    Crée une sous-page dans parent_page_id depuis le template donné.
-    Retourne l'ID de la nouvelle sous-page.
-    """
-    # Créer la sous-page vide
     resp = await client.post(
         f"{BASE_URL}/pages",
         headers=headers,
@@ -227,8 +299,7 @@ async def _create_sub_page_from_template(
     resp.raise_for_status()
     sub_page_id = resp.json()["id"]
 
-    # Copier les blocs du template
-    template_blocks = await _fetch_blocks_recursive(template_id, headers, client)
+    template_blocks = await _fetch_blocks_recursive(template_id, headers, client, api_key)
     for i in range(0, len(template_blocks), 100):
         patch_resp = await client.patch(
             f"{BASE_URL}/blocks/{sub_page_id}/children",
@@ -243,6 +314,9 @@ async def _create_sub_page_from_template(
     return sub_page_id
 
 
+# ── Point d'entrée principal ───────────────────────────────────────────────────
+
+
 async def create_page_from_template(
     api_key: str,
     database_id: str,
@@ -254,27 +328,19 @@ async def create_page_from_template(
 ) -> dict:
     """
     Crée une page dans une base Notion en dupliquant un template.
-
-    linked_sub_templates : liste de sous-pages à créer et à lier automatiquement.
-    Format : [{"template_id": "xxx", "title": "Tableau de bord — Client"}]
-    Les références dans les blocs du template principal sont remplacées par les
-    IDs des nouvelles sous-pages créées.
+    Copie récursive de tous les blocs, y compris les fichiers hébergés par Notion.
     """
     hdrs = _headers(api_key)
 
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        # 1. Nom exact de la propriété titre
+    async with httpx.AsyncClient(timeout=180.0) as client:
         title_prop = await _get_title_property_name(database_id, hdrs, client)
 
-        # 2. Récupérer les blocs du template principal (récursivement)
-        template_blocks = await _fetch_blocks_recursive(template_page_id, hdrs, client)
+        template_blocks = await _fetch_blocks_recursive(template_page_id, hdrs, client, api_key)
 
-        # 3. Construire les propriétés
         properties: dict = {title_prop: {"title": [{"text": {"content": title}}]}}
         if status_property:
             properties[status_property] = {"status": {"name": status_value}}
 
-        # 4. Créer la page principale (vide)
         create_resp = await client.post(
             f"{BASE_URL}/pages",
             headers=hdrs,
@@ -284,7 +350,7 @@ async def create_page_from_template(
         new_page = create_resp.json()
         page_id = new_page["id"]
 
-        # 5. Créer les sous-pages liées et construire la table de remplacement
+        # Créer les sous-pages liées et construire la table de remplacement
         replacements: dict[str, str] = {}
         sub_pages_created: list[dict] = []
 
@@ -295,17 +361,16 @@ async def create_page_from_template(
                 parent_page_id=page_id,
                 template_id=sub["template_id"],
                 title=sub_title,
+                api_key=api_key,
                 headers=hdrs,
                 client=client,
             )
             replacements[old_template_id] = new_sub_id
             sub_pages_created.append({"template_id": sub["template_id"], "new_page_id": new_sub_id})
 
-        # 6. Remplacer les références dans les blocs du template principal
         if replacements:
             template_blocks = _replace_refs_in_blocks(template_blocks, replacements)
 
-        # 7. Injecter les blocs dans la page principale par chunks de 100
         for i in range(0, len(template_blocks), 100):
             patch_resp = await client.patch(
                 f"{BASE_URL}/blocks/{page_id}/children",

@@ -21,6 +21,7 @@ class NotionFromTemplateRequest(BaseModel):
     status_value: str = "Not Started"
     linked_sub_templates: list[LinkedSubTemplate] | None = None
     call_blocks: list[dict] | None = None
+    notion_api_key: str | None = None  # clé spécifique au client (prioritaire sur l'env)
 
 
 @router.post("/create-from-template")
@@ -29,12 +30,16 @@ async def notion_create_from_template(
     _: None = Depends(verify_api_key),
 ) -> dict:
     settings = get_settings()
-    if not settings.notion_api_key:
-        raise HTTPException(status_code=500, detail="NOTION_API_KEY not configured on server")
+    api_key = body.notion_api_key or settings.notion_api_key
+    if not api_key:
+        raise HTTPException(
+            status_code=500,
+            detail="Notion API key missing: pass notion_api_key in body or set NOTION_API_KEY",
+        )
 
     try:
         result = await create_page_from_template(
-            api_key=settings.notion_api_key,
+            api_key=api_key,
             database_id=body.database_id,
             template_page_id=body.template_page_id,
             title=body.title,
